@@ -13,19 +13,32 @@ func initTemplate() error {
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Println("==========================================")
-	fmt.Println("Project Template Initialization")
+	fmt.Println("Go Project Template Initialization")
 	fmt.Println("==========================================")
 	fmt.Println()
 
-	// Get the current directory name as default
+	// Get current directory name as default
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getting current directory: %w", err)
 	}
 	defaultProjectName := filepath.Base(currentDir)
 
+	// Read go.mod to get current module path
+	goModPath := "go.mod"
+	currentModule, err := readModulePath(goModPath)
+	if err != nil {
+		return fmt.Errorf("reading go.mod: %w", err)
+	}
+
 	// Prompt for project information
 	projectName := prompt(reader, fmt.Sprintf("Project name (default: %s): ", defaultProjectName), defaultProjectName)
+
+	modulePath := prompt(reader, "Go module path (e.g., github.com/username/repo): ", "")
+	for modulePath == "" {
+		fmt.Println("Module path is required!")
+		modulePath = prompt(reader, "Go module path (e.g., github.com/username/repo): ", "")
+	}
 
 	execName := prompt(reader, fmt.Sprintf("Executable name (default: %s): ", projectName), projectName)
 	sshUser := prompt(reader, "SSH user for deployment (default: ansible): ", "ansible")
@@ -37,6 +50,7 @@ func initTemplate() error {
 	fmt.Println("Configuration Summary:")
 	fmt.Println("==========================================")
 	fmt.Printf("Project name:       %s\n", projectName)
+	fmt.Printf("Module path:        %s\n", modulePath)
 	fmt.Printf("Executable name:    %s\n", execName)
 	fmt.Printf("SSH user:           %s\n", sshUser)
 	if deployTargetIP != "" {
@@ -54,6 +68,12 @@ func initTemplate() error {
 
 	fmt.Println()
 	fmt.Println("Initializing project...")
+
+	// Update go.mod
+	if err := updateGoMod(goModPath, currentModule, modulePath); err != nil {
+		return fmt.Errorf("updating go.mod: %w", err)
+	}
+	fmt.Println("✓ Updated go.mod")
 
 	// Update Makefile
 	if err := updateMakefile("Makefile", projectName, execName, sshUser, deployTargetIP); err != nil {
@@ -89,6 +109,33 @@ func prompt(reader *bufio.Reader, message, defaultValue string) string {
 		return defaultValue
 	}
 	return input
+}
+
+func readModulePath(filename string) (string, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return "", err
+	}
+
+	re := regexp.MustCompile(`(?m)^module\s+(.+)$`)
+	matches := re.FindSubmatch(data)
+	if len(matches) < 2 {
+		return "", fmt.Errorf("module path not found in go.mod")
+	}
+
+	return string(matches[1]), nil
+}
+
+func updateGoMod(filename, oldModule, newModule string) error {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	content := string(data)
+	content = strings.Replace(content, "module "+oldModule, "module "+newModule, 1)
+
+	return os.WriteFile(filename, []byte(content), 0644)
 }
 
 func updateMakefile(filename, projectName, execName, sshUser, deployTargetIP string) error {
@@ -139,8 +186,8 @@ func updateSystemdFiles(dirname, projectName string) error {
 			continue
 		}
 
-		fp := filepath.Join(dirname, filename)
-		data, err := os.ReadFile(fp)
+		oldPath := filepath.Join(dirname, filename)
+		data, err := os.ReadFile(oldPath)
 		if err != nil {
 			return err
 		}
@@ -148,11 +195,30 @@ func updateSystemdFiles(dirname, projectName string) error {
 		content := string(data)
 		content = strings.ReplaceAll(content, "go-start", projectName)
 
-		if err := os.WriteFile(fp, []byte(content), 0644); err != nil {
+		// Determine new filename
+		var ext string
+		if strings.HasSuffix(filename, ".service") {
+			ext = ".service"
+		} else {
+			ext = ".timer"
+		}
+		newFilename := projectName + ext
+		newPath := filepath.Join(dirname, newFilename)
+
+		// Write to new filename
+		if err := os.WriteFile(newPath, []byte(content), 0644); err != nil {
 			return err
 		}
 
-		fmt.Printf("✓ Updated %s\n", fp)
+		// Remove old file if the name changed
+		if oldPath != newPath {
+			if err := os.Remove(oldPath); err != nil {
+				return err
+			}
+			fmt.Printf("✓ Renamed %s to %s\n", oldPath, newPath)
+		} else {
+			fmt.Printf("✓ Updated %s\n", newPath)
+		}
 	}
 
 	return nil
