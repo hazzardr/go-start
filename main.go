@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -18,10 +19,23 @@ type config struct {
 }
 
 func main() {
+	//TODO: remove after project init
+	initCmd := flag.NewFlagSet("init", flag.ExitOnError)
+
+	// Check if "init" subcommand is provided
+	if len(os.Args) > 1 && os.Args[1] == "init" {
+		initCmd.Parse(os.Args[2:])
+		if err := initTemplate(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	//TODO: End init
+
 	var cfg config
 	flag.IntVar(&cfg.port, "port", 4000, "Port to listen on")
 	flag.StringVar(&cfg.logFmt, "log-format", "text", "Log format (text|json)")
-	//flag.StringVar(&cfg.dsn, "dsn", os.Getenv("DATABASE_URL"), "Database connection string")
 	flag.Parse()
 
 	logger := log.NewWithOptions(os.Stderr, log.Options{
@@ -30,13 +44,7 @@ func main() {
 		TimeFormat:      time.Kitchen,
 	})
 
-	//if cfg.dsn == "" {
-	//	slog.Error("database URL is required")
-	//	os.Exit(1)
-	//}
-
 	slog.SetDefault(slog.New(logger))
-
 	slog.Info("hello world!")
 
 	errs := make(chan error)
