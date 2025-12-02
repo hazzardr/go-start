@@ -34,7 +34,8 @@ func initTemplate() error {
 	// Prompt for project information
 	projectName := prompt(reader, fmt.Sprintf("Project name (default: %s): ", defaultProjectName), defaultProjectName)
 
-	modulePath := prompt(reader, "Go module path (e.g., github.com/username/repo): ", "")
+	defaultModulePath := fmt.Sprintf("github.com/hazzardr/%s", projectName)
+	modulePath := prompt(reader, fmt.Sprintf("Go module path (default:, %s): ", defaultModulePath), defaultModulePath)
 	for modulePath == "" {
 		fmt.Println("Module path is required!")
 		modulePath = prompt(reader, "Go module path (e.g., github.com/username/repo): ", "")
